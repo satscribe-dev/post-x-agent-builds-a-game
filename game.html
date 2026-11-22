@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEON SNAKE — one prompt, one agent, one game</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; background: #07070f; overflow: hidden; }
+  body {
+    font-family: "DejaVu Sans Mono", ui-monospace, Menlo, monospace;
+    color: #e8e8ff; display: flex; flex-direction: column; align-items: center;
+    justify-content: center;
+  }
+  header { text-align: center; padding: 34px 0 10px; }
+  header .tag {
+    font-size: 26px; letter-spacing: 6px; color: #ff2e88; text-transform: uppercase;
+  }
+  header h1 {
+    font-size: 64px; letter-spacing: 4px; color: #39ff88;
+    text-shadow: 0 0 18px #39ff88, 0 0 46px #39ff88;
+  }
+  #score {
+    font-size: 120px; font-weight: bold; color: #fff;
+    text-shadow: 0 0 24px #39ff88; line-height: 1.05;
+  }
+  #score small { display: block; font-size: 28px; letter-spacing: 8px; color: #8a8ab0; text-shadow: none; }
+  #wrap { position: relative; margin-top: 18px; }
+  canvas {
+    display: block; width: 1000px; height: 1000px; background: #0b0b1a; border: 3px solid #2a2a4a; border-radius: 18px;
+    box-shadow: 0 0 40px rgba(57, 255, 136, .25), 0 0 90px rgba(255, 46, 136, .18);
+  }
+  #banner {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: rgba(7, 7, 15, .72); border-radius: 18px; z-index: 2;
+  }
+  #banner .big { font-size: 72px; font-weight: bold; color: #ff2e88; text-shadow: 0 0 24px #ff2e88; }
+  #banner .sub { font-size: 34px; color: #e8e8ff; margin-top: 14px; }
+  #banner .key {
+    margin-top: 26px; font-size: 30px; color: #39ff88;
+    border: 2px solid #39ff88; border-radius: 12px; padding: 10px 26px;
+  }
+  footer { margin-top: 26px; font-size: 24px; color: #8a8ab0; letter-spacing: 1px; text-align: center; padding: 0 30px; }
+  footer b { color: #e8e8ff; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="tag">one prompt &middot; one agent</div>
+    <h1>NEON SNAKE</h1>
+  </header>
+  <div id="score"><small>SCORE</small><span id="points">0</span></div>
+  <div id="wrap">
+    <canvas id="game" width="960" height="960"></canvas>
+    <div id="banner">
+      <div class="big" id="bannerTitle">NEON SNAKE</div>
+      <div class="sub" id="bannerSub">Eat the orbs. Don't hit the walls.</div>
+      <div class="key">PRESS SPACE TO PLAY</div>
+    </div>
+  </div>
+  <footer>ARROWS / WASD to steer &nbsp;&middot;&nbsp; <b>+10</b> per orb &nbsp;&middot;&nbsp; SPACE to restart</footer>
+
+<script>
+"use strict";
+// NEON SNAKE — built from a single prompt, in one sitting.
+// Grid snake: eat glowing orbs, +10 each, faster every orb,
+// game over on wall or self collision, Space restarts.
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const pointsEl = document.getElementById("points");
+const banner = document.getElementById("banner");
+const bannerTitle = document.getElementById("bannerTitle");
+const bannerSub = document.getElementById("bannerSub");
+
+const COLS = 24, ROWS = 24;
+const CELL = canvas.width / COLS;
+const START_MS = 150, MIN_MS = 70, STEP_MS = 4;
+
+let snake, dir, nextDir, orb, score, stepMs, timer, alive, started;
+
+// Demo autopilot (?demo=1): steers itself toward the orb so the
+// game can be watched playing itself. Same rules, no cheat.
+const DEMO = new URLSearchParams(location.search).has("demo");
+
+function rndCell() {
+  return { x: Math.floor(Math.random() * COLS), y: Math.floor(Math.random() * ROWS) };
+}
+
+function placeOrb() {
+  let p;
+  do { p = rndCell(); }
+  while (snake.some(s => s.x === p.x && s.y === p.y));
+  orb = p;
+}
+
+function reset() {
+  snake = [{ x: 12, y: 12 }, { x: 11, y: 12 }, { x: 10, y: 12 }];
+  dir = { x: 1, y: 0 };
+  nextDir = dir;
+  score = 0;
+  stepMs = START_MS;
+  alive = true;
+  pointsEl.textContent = "0";
+  placeOrb();
+}
+
+function draw() {
+  ctx.fillStyle = "#0b0b1a";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // faint grid
+  ctx.strokeStyle = "rgba(120,120,200,0.08)";
+  ctx.lineWidth = 1;
+  for (let i = 1; i < COLS; i++) {
+    ctx.beginPath(); ctx.moveTo(i * CELL, 0); ctx.lineTo(i * CELL, canvas.height); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * CELL); ctx.lineTo(canvas.width, i * CELL); ctx.stroke();
+  }
+  // glowing orb
+  const ox = orb.x * CELL + CELL / 2, oy = orb.y * CELL + CELL / 2;
+  const glow = ctx.createRadialGradient(ox, oy, 2, ox, oy, CELL * 0.9);
+  glow.addColorStop(0, "rgba(255,46,136,0.95)");
+  glow.addColorStop(0.45, "rgba(255,46,136,0.35)");
+  glow.addColorStop(1, "rgba(255,46,136,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(ox, oy, CELL * 0.9, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#ff5da2";
+  ctx.beginPath(); ctx.arc(ox, oy, CELL * 0.32, 0, Math.PI * 2); ctx.fill();
+  // snake, head brightest, tail fading
+  snake.forEach((seg, i) => {
+    const t = 1 - i / snake.length;
+    const g = Math.round(120 + 135 * t);
+    ctx.fillStyle = `rgb(57,${g},136)`;
+    ctx.shadowColor = "#39ff88";
+    ctx.shadowBlur = 18 * t + 4;
+    const pad = 2 + (1 - t) * 2;
+    ctx.beginPath();
+    ctx.roundRect(seg.x * CELL + pad, seg.y * CELL + pad, CELL - pad * 2, CELL - pad * 2, 8);
+    ctx.fill();
+  });
+  ctx.shadowBlur = 0;
+  // eyes on the head
+  const h = snake[0];
+  const ex = h.x * CELL + CELL / 2, ey = h.y * CELL + CELL / 2;
+  ctx.fillStyle = "#07070f";
+  ctx.beginPath(); ctx.arc(ex - 8 + dir.x * 6, ey - 8 + dir.y * 6, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(ex + 8 + dir.x * 6, ey + 8 + dir.y * 6, 5, 0, Math.PI * 2); ctx.fill();
+}
+
+function tick() {
+  if (!alive) return;
+  dir = nextDir;
+  const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+  if (head.x < 0 || head.y < 0 || head.x >= COLS || head.y >= ROWS ||
+      snake.some(s => s.x === head.x && s.y === head.y)) {
+    return gameOver();
+  }
+  snake.unshift(head);
+  if (head.x === orb.x && head.y === orb.y) {
+    score += 10;
+    pointsEl.textContent = String(score);
+    stepMs = Math.max(MIN_MS, stepMs - STEP_MS);
+    placeOrb();
+  } else {
+    snake.pop();
+  }
+  draw();
+  schedule();
+}
+
+function schedule() {
+  clearTimeout(timer);
+  timer = setTimeout(tick, stepMs);
+}
+
+function gameOver() {
+  alive = false;
+  clearTimeout(timer);
+  draw();
+  bannerTitle.textContent = "GAME OVER";
+  bannerSub.textContent = "Score " + score + " — the snake bit the dust.";
+  banner.classList.remove("hidden");
+  // Demo mode loops by itself so the game can be watched endlessly.
+  if (DEMO) setTimeout(start, 1600);
+}
+
+function start() {
+  if (started && alive) return;
+  started = true;
+  reset();
+  banner.classList.add("hidden");
+  draw();
+  schedule();
+}
+
+function steer(x, y) {
+  if (dir.x === -x && dir.y === -y) return; // no reversing into yourself
+  nextDir = { x, y };
+}
+
+// Demo autopilot: greedy chase, avoids instant death by checking the next cell.
+function demoSteer() {
+  if (!alive || !started) return;
+  const head = snake[0];
+  const options = [
+    { x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 },
+  ].filter(d => !(dir.x === -d.x && dir.y === -d.y));
+  const safe = options.filter(d => {
+    const nx = head.x + d.x, ny = head.y + d.y;
+    return nx >= 0 && ny >= 0 && nx < COLS && ny < ROWS &&
+      !snake.some((s, i) => i < snake.length - 1 && s.x === nx && s.y === ny);
+  });
+  const pool = safe.length ? safe : options;
+  pool.sort((a, b) => {
+    const da = Math.abs(head.x + a.x - orb.x) + Math.abs(head.y + a.y - orb.y);
+    const db = Math.abs(head.x + b.x - orb.x) + Math.abs(head.y + b.y - orb.y);
+    return da - db;
+  });
+  nextDir = pool[0];
+  setTimeout(demoSteer, 30);
+}
+
+const KEYS = {
+  ArrowUp: [0, -1], KeyW: [0, -1],
+  ArrowDown: [0, 1], KeyS: [0, 1],
+  ArrowLeft: [-1, 0], KeyA: [-1, 0],
+  ArrowRight: [1, 0], KeyD: [1, 0],
+};
+window.addEventListener("keydown", (e) => {
+  if (e.code === "Space") { e.preventDefault(); start(); return; }
+  const k = KEYS[e.code];
+  if (k) { e.preventDefault(); steer(k[0], k[1]); }
+});
+canvas.addEventListener("click", start);
+
+// Exposed for the recording harness: score + state, nothing else.
+window.__game = {
+  state: () => ({ score, alive, started, length: snake.length }),
+};
+
+reset();
+draw();
+if (DEMO) { start(); demoSteer(); }
+</script>
+</body>
+</html>
