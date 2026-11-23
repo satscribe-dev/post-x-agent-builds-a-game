@@ -26,6 +26,24 @@ and ends with make.fun's referral end card (referral code `t85a3fvn`).
 It is posted natively on X from a public account — the post itself is the
 entry, ranked by its views + 10× its likes, reposts, quotes and replies.
 
+### v2 — "payoff first" (23 Nov 2026, dashboard tweak cmd 31)
+
+v1 (35.53 s) opened with a static text card and only showed gameplay at
+20 s. v2 rebuilds the cut from scratch: the finished game is on screen in
+frame 1 ("MY AGENT BUILT THIS. FROM ONE PROMPT."), the prompt and the build
+are compressed to 7 s, and the last 12 s are a real gameplay highlight reel
+at 1.25× with on-screen captions — including "What should my agent build
+next?", an invitation to reply. 22.60 s, 1080×1920, H.264 + AAC,
+sha256 `471d9d512974b6afc4bdecfa24a41d7d9c2651bc73e0407a098d81cd20ce92ca`.
+Gameplay is real Chromium headless footage of this same `game.html`
+(`?demo=1` autopilot, best run score 250, second run 170); the end card is
+make.fun's 9:16 referral card, freshly fetched from the press manifest in
+the v2 session (sha256 `286b76c6…`, matches the manifest), code `t85a3fvn`.
+v2 session anchor: `5f7f5c1b18179fb8f3373c0fc6291a912a916f93` (drand round
+34209126). Local judge (independent, 2-pass pairwise, T3): v2 beats v1 on
+4 of 5 criteria (first frame, speed to proof, pacing, silent-first), tied
+on CTA — v2 is the candidate (see the bounty log).
+
 ## The entry program
 
 `main.ts` (Node 22, standard library only) copies `POST.json` from the
